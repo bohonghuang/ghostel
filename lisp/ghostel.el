@@ -6493,6 +6493,20 @@ PROCESS is the shell process, WINDOWS is the list of windows."
     ;; after this function returns.  nil suppresses the call.
     size))
 
+(defun ghostel--sync-tty-composition (window)
+  "Sync `auto-composition-mode' with WINDOW's frame for ghostel buffers.
+On a TTY frame, set the buffer-local value to the frame's `tty-type'
+so composition is inhibited there (works around TTY column drift on
+VS-16 emoji clusters, see debbugs#81052).
+On a GUI frame, leave the value alone: it is either t (mode-init default;
+composition stays on) or a string from a prior TTY display (string never
+matches a GUI's nil `tty-type', so composition still stays on for the GUI
+and the TTY display that needs it off keeps working in parallel)."
+  (when (windowp window)
+    (when-let* ((tt (tty-type (window-frame window))))
+      (unless (equal auto-composition-mode tt)
+        (setq-local auto-composition-mode tt)))))
+
 (defun ghostel--reshow-snap (window)
   "Mark WINDOW for viewport-snap on the next redraw.
 Intended for buffer-local `window-buffer-change-functions'.  Fires
@@ -6553,8 +6567,8 @@ output is arriving."
   (add-function :after after-focus-change-function #'ghostel--focus-change)
   (add-hook 'window-selection-change-functions #'ghostel--focus-change)
   (add-hook 'window-buffer-change-functions #'ghostel--focus-change)
-  (add-hook 'window-buffer-change-functions
-            #'ghostel--reshow-snap nil t)
+  (add-hook 'window-buffer-change-functions #'ghostel--reshow-snap nil t)
+  (add-hook 'window-buffer-change-functions #'ghostel--sync-tty-composition nil t)
   (ghostel--suppress-interfering-modes)
   (ghostel-imenu-setup)
   (setq ghostel--scroll-intercept-active t)
