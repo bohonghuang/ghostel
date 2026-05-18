@@ -427,21 +427,21 @@ fn applyProps(env: emacs.Env, start: i64, end: i64, props: CellProps, default_co
 
     if (face_props.len > 0) {
         const face = env.funcall(s.list, face_props.items());
-        env.putTextProperty(start_val, end_val, s.face, face);
+        env.putTextProperty(start_val, end_val, "face", face);
     }
 
     if (props.hyperlink) {
-        env.putTextProperty(start_val, end_val, s.@"help-echo", s.@"ghostel--native-link-help-echo");
-        env.putTextProperty(start_val, end_val, s.@"mouse-face", s.highlight);
-        env.putTextProperty(start_val, end_val, s.keymap, env.symbolValue("ghostel-link-map"));
+        env.putTextProperty(start_val, end_val, "help-echo", s.@"ghostel--native-link-help-echo");
+        env.putTextProperty(start_val, end_val, "mouse-face", s.highlight);
+        env.putTextProperty(start_val, end_val, "keymap", env.symbolValue("ghostel-link-map"));
     }
 
     if (props.prompt) {
-        env.putTextProperty(start_val, end_val, emacs.sym.@"ghostel-prompt", env.t());
+        env.putTextProperty(start_val, end_val, "ghostel-prompt", env.t());
     }
 
     if (props.input) {
-        env.putTextProperty(start_val, end_val, emacs.sym.@"ghostel-input", env.t());
+        env.putTextProperty(start_val, end_val, "ghostel-input", env.t());
     }
 }
 
@@ -782,7 +782,7 @@ fn insertRow(
         // Mark newlines from soft-wrapped rows so copy mode can filter them
         const point = env.point();
         const nl_pos = env.makeInteger(env.extractInteger(point) - 1);
-        env.putTextProperty(nl_pos, point, emacs.sym.@"ghostel-wrap", env.t());
+        env.putTextProperty(nl_pos, point, "ghostel-wrap", env.t());
     }
 }
 

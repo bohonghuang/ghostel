@@ -304,8 +304,14 @@ pub const Env = struct {
         _ = self.f("delete-region", .{ start, end });
     }
 
-    pub fn putTextProperty(self: Env, start: Value, end: Value, prop: Value, value: Value) void {
-        _ = self.f("put-text-property", .{ start, end, prop, value });
+    pub fn putTextProperty(
+        self: Env,
+        start: anytype,
+        end: anytype,
+        comptime prop: []const u8,
+        value: anytype,
+    ) void {
+        _ = self.f("put-text-property", .{ start, end, @field(sym, prop), value });
     }
 
     /// Create a unibyte string (for binary data like PNG images).
