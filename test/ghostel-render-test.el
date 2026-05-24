@@ -3134,7 +3134,7 @@ and requests a snap so the next redraw lands at the live viewport."
 
 (ert-deftest ghostel-test-redraw-syncs-window-point-to-cursor ()
   "Anchored redraw syncs `window-point' to the terminal cursor.
-When an OSC 51;E callback moved selection elsewhere and left the
+When an OSC 52;e callback moved selection elsewhere and left the
 ghostel window's `window-point' stale, the next redraw (which is
 anchored because the window is at the viewport) must update it."
   :tags '(native)
@@ -3158,7 +3158,7 @@ anchored because the window is at the viewport) must update it."
                         (forward-line -9)
                         (line-beginning-position))))
               (set-window-start (selected-window) vp t))
-            ;; Simulate OSC 51;E leaving window-point stale.
+            ;; Simulate OSC 52;e leaving window-point stale.
             (set-window-point (selected-window) (point-min))
             (setq ghostel--force-next-redraw t)
             (ghostel--delayed-redraw buf)

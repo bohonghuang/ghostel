@@ -515,7 +515,7 @@ const interned_symbols = [_][:0]const u8{
     "ghostel--native-uri-at",
     "ghostel--osc-progress",
     "ghostel--osc133-marker",
-    "ghostel--osc51-eval",
+    "ghostel--osc52-eval",
     "ghostel--osc52-handle",
     "ghostel--query-font-cached",
     "ghostel--rendered-font",

@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **Breaking:** `ghostel_cmd` (shell helper) now emits `OSC 52;e`
+  instead of `OSC 51;E`.  Libghostty parses OSC 51 into an action
+  the standard handler ignores, so the elisp-eval extension never
+  reached ghostel's callback through normal action dispatch — the
+  old code worked around this with a post-write byte scanner.  The
+  extension now rides on OSC 52 with a reserved `kind` byte (`e`),
+  which libghostty dispatches directly to ghostel's handler.
+  Scripts that hand-roll the legacy `\e]51;E…\e\\` sequence will
+  silently no-op; update to `\e]52;e;…\e\\` or call the bundled
+  `ghostel_cmd` helper.  The post-write byte scanner is gone; the
+  OSC 52 path is parsed by libghostty and now reassembles payloads
+  split across read boundaries (slow producers, SSH).
+
 ## [0.29.0] — 2026-05-23
 
 ### Added

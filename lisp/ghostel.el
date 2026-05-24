@@ -469,7 +469,7 @@ for static env entries that don't depend on runtime state."
                                ("dired" dired)
                                ("dired-other-window" dired-other-window)
                                ("message" message))
-  "Whitelisted Emacs functions callable from the terminal via OSC 51.
+  "Whitelisted Emacs functions callable from the terminal via OSC 52;e.
 Each entry is (NAME FUNCTION) where NAME is the string sent from
 the shell and FUNCTION is the Elisp function to invoke.
 All arguments are passed as strings."
@@ -5100,11 +5100,22 @@ indicator and suppression always reach a sane state."
 
 ;;; Callbacks from native module
 
-(defun ghostel--osc51-eval (str)
-  "Handle an OSC 51;E command from the terminal.
-STR is the payload after the E sub-command.
+(defvar-local ghostel--osc52-eval-in-flight nil
+  "Non-nil while an OSC 52;e dispatch is pending.
+Set by `ghostel--filter' when the introducer regex matches; cleared
+by `ghostel--osc52-eval' as its first form, so the dispatch firing
+is the authoritative \"done\" edge.  Used to keep forcing synchronous
+flushes until the OSC completes, even when the introducer and body arrive
+in separate filter chunks (slow producers, SSH, small TCP segments).")
+
+(defun ghostel--osc52-eval (str)
+  "Handle an OSC 52 elisp-eval payload from the terminal.
+STR is the raw payload from OSC 52 with kind \\='e\\='.
 Parses the command and arguments, looks up the command in
 `ghostel-eval-cmds', and calls it if whitelisted."
+  ;; Clear before the body so a callback error still drops the flag —
+  ;; `ghostel--filter' relies on this firing to stop forcing sync flush.
+  (setq ghostel--osc52-eval-in-flight nil)
   (let* ((parts (split-string-and-unquote str))
          (command (car parts))
          (args (cdr parts))
@@ -5522,17 +5533,21 @@ the redraw is performed immediately to minimize typing latency."
       (when ghostel--term
         ;; Accumulate output for batched write-input at redraw time.
         (push output ghostel--pending-output)
-        ;; Respond to OSC 51;E or OSC 4/10/11 color queries immediately:
-        ;; programs like `duf' read stdin with a tight timeout and give up if
-        ;; the reply waits for the redraw timer.
-        ;; Flushing runs the extractor in the native module, which writes the reply
-        ;; back through the PTY before this filter returns.
-        ;; Carry a 16-byte tail so an introducer split across reads still matches.
+        ;; Sync-flush OSC 52;e (elisp-eval) and OSC 4/10/11 color queries
+        ;; so producers don't race the redraw timer.  Carry-tail catches
+        ;; mid-introducer splits; the in-flight flag catches the split
+        ;; where the introducer ends chunk 1 (chunk 2 has no `52;e;' to
+        ;; rematch on its own).  The flag is set only for eval - color
+        ;; replies are written back inside the same write-input call.
         (let* ((prev (cadr ghostel--pending-output))
-               (carry (and prev (substring prev (max 0 (- (length prev) 16))))))
-          (when (string-match-p
-                 "\e\\]\\(?:4;[0-9]+;\\?\\|10;\\?\\|11;\\?\\|51;E\\)"
-                 (if carry (concat carry output) output))
+               (carry (and prev (substring prev (max 0 (- (length prev) 16)))))
+               (text (if carry (concat carry output) output))
+               (eval-match (string-match-p "\e\\]52;e;" text)))
+          (when (or eval-match
+                    ghostel--osc52-eval-in-flight
+                    (string-match-p
+                     "\e\\]\\(?:4;[0-9]+;\\?\\|10;\\?\\|11;\\?\\)" text))
+            (when eval-match (setq ghostel--osc52-eval-in-flight t))
             (ghostel--flush-pending-output)))
         ;; Immediate redraw for interactive echo: small output arriving
         ;; within `ghostel-immediate-redraw-interval' of last keystroke.
@@ -6290,9 +6305,9 @@ position COL columns into the first matched line."
   (when ghostel--pending-output
     (let ((combined (apply #'concat (nreverse ghostel--pending-output))))
       (setq ghostel--pending-output nil)
-      ;; An OSC 51;E callback dispatched synchronously from the native
-      ;; parser (e.g. `find-file-other-window') can change the current
-      ;; buffer via `select-window'.  Isolate that so callers keep
+      ;; An OSC 52;e (elisp-eval) callback dispatched synchronously from
+      ;; the native parser (e.g. `find-file-other-window') can change the
+      ;; current buffer via `select-window'.  Isolate that so callers keep
       ;; reading buffer-locals — notably `ghostel--term' — from the
       ;; ghostel buffer after this returns.
       (save-current-buffer

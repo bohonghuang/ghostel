@@ -893,14 +893,14 @@ the reply waits for the redraw timer."
             (should ghostel--pending-output)))
       (kill-buffer buf))))
 
-(ert-deftest ghostel-test-osc51-eval-filter-flush ()
-  "The process filter must dispatch OSC 51;E synchronously.
+(ert-deftest ghostel-test-osc52-eval-filter-flush ()
+  "The process filter must dispatch OSC 52;e synchronously.
 Callers like `b4 prep --edit-cover' delete temp files shortly
 after sending the OSC; a delayed dispatch (via the redraw timer)
 loses the race with `tempfile.TemporaryDirectory' cleanup, so
 `find-file' opens a file whose parent directory is already gone."
   :tags '(native)
-  (let ((buf (generate-new-buffer " *ghostel-osc51-flush*"))
+  (let ((buf (generate-new-buffer " *ghostel-osc52-flush*"))
         (fake-proc (make-symbol "fake-proc"))
         (dispatched nil))
     (unwind-protect
@@ -913,15 +913,15 @@ loses the race with `tempfile.TemporaryDirectory' cleanup, so
             (cl-letf (((symbol-function 'process-buffer) (lambda (_) buf))
                       ((symbol-function 'process-live-p) (lambda (_) t))
                       ((symbol-function 'ghostel--invalidate) #'ignore))
-              ;; OSC 51;E must run before `ghostel--filter' returns.
-              (ghostel--filter fake-proc "\e]51;Enoop \"hi\"\e\\")
+              ;; OSC 52;e must run before `ghostel--filter' returns.
+              (ghostel--filter fake-proc "\e]52;e;noop \"hi\"\e\\")
               (should (equal '(noop "hi") dispatched))
               (should (equal nil ghostel--pending-output))
 
-              ;; OSC 51;A (directory tracking, not elisp eval) must NOT
-              ;; trigger the sync flush — it's harmless to defer.
+              ;; OSC 52;c (standard clipboard) must NOT trigger the sync
+              ;; flush — it's harmless to defer, unlike eval.
               (setq dispatched nil)
-              (ghostel--filter fake-proc "\e]51;A/tmp\e\\")
+              (ghostel--filter fake-proc "\e]52;c;aGVsbG8=\e\\")
               (should (equal nil dispatched))
               (should ghostel--pending-output)
 
@@ -931,33 +931,89 @@ loses the race with `tempfile.TemporaryDirectory' cleanup, so
               ;; the carryover tail of the first must trigger dispatch.
               (setq dispatched nil
                     ghostel--pending-output nil)
-              (ghostel--filter fake-proc "prefix\e]51;")
+              (ghostel--filter fake-proc "prefix\e]52;")
               (should (equal nil dispatched))
-              (ghostel--filter fake-proc "Enoop \"split\"\e\\")
+              (ghostel--filter fake-proc "e;noop \"split\"\e\\")
               (should (equal '(noop "split") dispatched))
               (should (equal nil ghostel--pending-output)))))
       (kill-buffer buf))))
 
-(ert-deftest ghostel-test-osc51-eval ()
-  "Test that OSC 51;E dispatches to whitelisted functions."
+(ert-deftest ghostel-test-osc52-eval-filter-flush-after-introducer ()
+  "Sync-flush survives the introducer landing alone at chunk end.
+Regression for the case where chunk 1 = `\\e]52;e;\\=' (regex matches,
+flush, pending cleared) and chunk 2 = body + ST (no `52;e;\\=', no
+carry).  Without the in-flight flag the eval defers to the redraw
+timer and `b4 prep --edit-cover\\=' can race its temp-dir cleanup."
+  :tags '(native)
+  (let ((buf (generate-new-buffer " *ghostel-osc52-after-intro*"))
+        (fake-proc (make-symbol "fake-proc"))
+        (dispatched nil))
+    (unwind-protect
+        (with-current-buffer buf
+          (setq ghostel--term (ghostel--new 25 80 1000))
+          (setq ghostel--process fake-proc)
+          (let ((ghostel-eval-cmds
+                 `(("noop" ,(lambda (&rest args)
+                              (setq dispatched (cons 'noop args)))))))
+            (cl-letf (((symbol-function 'process-buffer) (lambda (_) buf))
+                      ((symbol-function 'process-live-p) (lambda (_) t))
+                      ((symbol-function 'ghostel--invalidate) #'ignore))
+              (ghostel--filter fake-proc "\e]52;e;")
+              (should ghostel--osc52-eval-in-flight)
+              (should-not dispatched)
+              (ghostel--filter fake-proc "\"noop\" \"post\"\e\\")
+              (should (equal '(noop "post") dispatched))
+              (should-not ghostel--osc52-eval-in-flight)
+              (should (equal nil ghostel--pending-output)))))
+      (kill-buffer buf))))
+
+(ert-deftest ghostel-test-osc52-eval-filter-flush-mid-body ()
+  "Sync-flush survives a body-split with the terminator in chunk 2.
+Chunk 1 carries the introducer + partial body; chunk 2 finishes the
+body and the ST.  The in-flight flag keeps forcing flush on chunk 2
+even though chunk 2 itself contains no `52;e;\\=' substring."
+  :tags '(native)
+  (let ((buf (generate-new-buffer " *ghostel-osc52-mid-body*"))
+        (fake-proc (make-symbol "fake-proc"))
+        (dispatched nil))
+    (unwind-protect
+        (with-current-buffer buf
+          (setq ghostel--term (ghostel--new 25 80 1000))
+          (setq ghostel--process fake-proc)
+          (let ((ghostel-eval-cmds
+                 `(("noop" ,(lambda (&rest args)
+                              (setq dispatched (cons 'noop args)))))))
+            (cl-letf (((symbol-function 'process-buffer) (lambda (_) buf))
+                      ((symbol-function 'process-live-p) (lambda (_) t))
+                      ((symbol-function 'ghostel--invalidate) #'ignore))
+              (ghostel--filter fake-proc "\e]52;e;\"noop\" \"sp")
+              (should ghostel--osc52-eval-in-flight)
+              (should-not dispatched)
+              (ghostel--filter fake-proc "lit\"\e\\")
+              (should (equal '(noop "split") dispatched))
+              (should-not ghostel--osc52-eval-in-flight))))
+      (kill-buffer buf))))
+
+(ert-deftest ghostel-test-osc52-eval ()
+  "Test that OSC 52;e dispatches to whitelisted functions."
   (let* ((called-with nil)
          (ghostel-eval-cmds
           `(("test-fn" ,(lambda (&rest args) (setq called-with args))))))
-    (ghostel--osc51-eval "\"test-fn\" \"hello\" \"world\"")
+    (ghostel--osc52-eval "\"test-fn\" \"hello\" \"world\"")
     (should (equal '("hello" "world") called-with))))
 
-(ert-deftest ghostel-test-osc51-eval-unknown ()
-  "Test that unknown OSC 51;E commands produce a message."
+(ert-deftest ghostel-test-osc52-eval-unknown ()
+  "Test that unknown OSC 52;e commands produce a message."
   (let ((ghostel-eval-cmds nil)
         (messages nil))
     (cl-letf (((symbol-function 'message)
                (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
-      (ghostel--osc51-eval "\"unknown-fn\" \"arg\"")
+      (ghostel--osc52-eval "\"unknown-fn\" \"arg\"")
       (should (car messages))
       (should (string-match-p "unknown eval command" (car messages))))))
 
-(ert-deftest ghostel-test-osc51-eval-catches-errors ()
-  "Errors from a dispatched OSC 51;E function are caught, not propagated.
+(ert-deftest ghostel-test-osc52-eval-catches-errors ()
+  "Errors from a dispatched OSC 52;e function are caught, not propagated.
 Otherwise they crash the process filter / redraw timer that invoked the
 native parser.  Regression for a follow-up to #82 where `dow' with no
 args called `dired-other-window' with 0 arguments and signaled up
@@ -968,10 +1024,67 @@ through the filter."
     (cl-letf (((symbol-function 'message)
                (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
       ;; Must not raise.
-      (ghostel--osc51-eval "\"boom\"")
+      (ghostel--osc52-eval "\"boom\"")
       (should (car messages))
       (should (string-match-p "error calling boom" (car messages)))
       (should (string-match-p "Kaboom" (car messages))))))
+
+(ert-deftest ghostel-test-osc52-eval-native ()
+  "OSC 52 kind \\='e\\=' reaches `ghostel--osc52-eval' through the native parser."
+  :tags '(native)
+  (let* ((term (ghostel--new 25 80 1000))
+         (called-with nil)
+         (ghostel-eval-cmds
+          `(("test-fn" ,(lambda (&rest args) (setq called-with args))))))
+    (ghostel--write-input term "\e]52;e;\"test-fn\" \"hi\"\e\\")
+    (should (equal '("hi") called-with))))
+
+(ert-deftest ghostel-test-osc52-kind-dispatch ()
+  "OSC 52 dispatches on kind: \\='e\\=' to eval, others to clipboard."
+  :tags '(native)
+  (let* ((term (ghostel--new 25 80 1000))
+         (eval-called nil)
+         (ghostel-eval-cmds
+          `(("k" ,(lambda (&rest _) (setq eval-called t))))))
+    (let ((ghostel-enable-osc52 t)
+          (kill-ring nil))
+      (ghostel--write-input term "\e]52;c;aGVsbG8=\e\\")
+      (should-not eval-called)
+      (should (equal "hello" (car kill-ring))))
+    (let ((ghostel-enable-osc52 t)
+          (kill-ring nil))
+      (ghostel--write-input term "\e]52;e;\"k\"\e\\")
+      (should eval-called)
+      (should-not kill-ring))))
+
+(ert-deftest ghostel-test-osc52-eval-cross-chunk ()
+  "OSC 52;e payload split across two write-input calls dispatches once.
+Ghostty's parser buffers the OSC body across stream-feed calls, so the
+elisp callback fires exactly when the terminator arrives in the second
+call.  The OSC 51 scanner this replaces could not handle this case."
+  :tags '(native)
+  (let* ((term (ghostel--new 25 80 1000))
+         (called-with nil)
+         (ghostel-eval-cmds
+          `(("test-fn" ,(lambda (&rest args) (setq called-with args))))))
+    (ghostel--write-input term "\e]52;e;\"test-fn\" \"par")
+    (should-not called-with)
+    (ghostel--write-input term "t1\" \"part2\"\e\\")
+    (should (equal '("part1" "part2") called-with))))
+
+(ert-deftest ghostel-test-osc52-mixed-kinds-one-write ()
+  "A single write containing both OSC 52;e and OSC 52;c dispatches both."
+  :tags '(native)
+  (let* ((term (ghostel--new 25 80 1000))
+         (eval-payloads nil)
+         (ghostel-eval-cmds
+          `(("k" ,(lambda (&rest args) (push args eval-payloads))))))
+    (let ((ghostel-enable-osc52 t)
+          (kill-ring nil))
+      (ghostel--write-input term
+                            "\e]52;e;\"k\" \"first\"\e\\\e]52;c;aGVsbG8=\e\\")
+      (should (equal '(("first")) eval-payloads))
+      (should (equal "hello" (car kill-ring))))))
 
 (provide 'ghostel-osc-test)
 ;;; ghostel-osc-test.el ends here
