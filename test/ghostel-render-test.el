@@ -1174,6 +1174,99 @@ native URI lookup when Emacs invokes it for tooltip display or clicking."
     (should (commandp #'ghostel-next-hyperlink))
     (should (commandp #'ghostel-previous-hyperlink))))
 
+(ert-deftest ghostel-test-hyperlink-navigation-skips-shared-id ()
+  "Multiple help-echo runs sharing `ghostel-link-id' navigate as one logical link.
+Reproduces the wrapped-OSC8-in-a-box case from issue #125 at the elisp
+helper layer (no native module needed).  Layout puts two same-id runs
+back-to-back (no different-id link between them) so the dedup loop has
+to step past more than one run before landing on a different id."
+  ;; Buffer (1-indexed):
+  ;;   "AAA A1 BBB A2 CCC other DDD"
+  ;;        ^5..6  ^12..13  ^19..23
+  ;; A1 and A2 carry id "shared"; `other' carries id "other".
+  (let ((buf (generate-new-buffer " *hyperlink-shared-id*")))
+    (unwind-protect
+        (with-current-buffer buf
+          (insert "AAA ")                ; 1..4
+          (let ((p (point)))             ; 5
+            (insert "A1")                ; 5..6
+            (put-text-property p (point) 'help-echo "https://shared")
+            (put-text-property p (point) 'ghostel-link-id "shared"))
+          (insert " BBB ")               ; 7..11
+          (let ((p (point)))             ; 12
+            (insert "A2")                ; 12..13
+            (put-text-property p (point) 'help-echo "https://shared")
+            (put-text-property p (point) 'ghostel-link-id "shared"))
+          (insert " CCC ")               ; 14..18
+          (let ((p (point)))             ; 19
+            (insert "other")             ; 19..23
+            (put-text-property p (point) 'help-echo "https://other")
+            (put-text-property p (point) 'ghostel-link-id "other"))
+          (insert " DDD")                ; 24..27
+
+          ;; Forward from inside A1: dedup loop must step PAST A2 (shared id)
+          ;; before landing on `other'.  This is the path that proves the
+          ;; loop actually iterates more than once.
+          (should (equal 19 (ghostel--find-next-link 5)))
+          ;; Forward from inside A2 also dedupes; lands on `other'.
+          (should (equal 19 (ghostel--find-next-link 12)))
+          ;; Outside any link, skip-id is nil → no dedup, lands on A1.
+          (should (equal 5 (ghostel--find-next-link (point-min))))
+          ;; Between A1 and A2 (no link), skip-id is nil → lands on A2.
+          (should (equal 12 (ghostel--find-next-link 8)))
+          ;; Forward from inside `other' has nothing left.
+          (should (null (ghostel--find-next-link 19)))
+
+          ;; Backward from inside A2: must step PAST A1 (shared id) → nil.
+          (should (null (ghostel--find-previous-link 12)))
+          ;; Backward from inside `other': lands on A1 (the URL's first chunk,
+          ;; not A2 the last chunk) by walking back over same-id runs.
+          (should (equal 5 (ghostel--find-previous-link 19)))
+          ;; Outside any link, skip-id is nil → lands on the last link.
+          (should (equal 19 (ghostel--find-previous-link (point-max)))))
+      (kill-buffer buf))))
+
+(ert-deftest ghostel-test-hyperlink-navigation-previous-lands-at-url-start ()
+  "`ghostel--find-previous-link' lands at the URL's first chunk, not its last.
+For a wrapped OSC 8 URL emitted as two chunks sharing `ghostel-link-id',
+backward navigation from below the URL should skip the second chunk and
+land on the start of the first chunk."
+  ;; Buffer:
+  ;;   "AAA U1 BBB U2 CCC DDD"
+  ;;        ^5..6 ^12..13
+  ;; U1 and U2 carry id "wrapped"; nothing else carries a link-id.
+  (let ((buf (generate-new-buffer " *hyperlink-url-start*")))
+    (unwind-protect
+        (with-current-buffer buf
+          (insert "AAA ")                ; 1..4
+          (let ((p (point)))             ; 5
+            (insert "U1")
+            (put-text-property p (point) 'help-echo "https://wrapped")
+            (put-text-property p (point) 'ghostel-link-id "wrapped"))
+          (insert " BBB ")
+          (let ((p (point)))             ; 12
+            (insert "U2")
+            (put-text-property p (point) 'help-echo "https://wrapped")
+            (put-text-property p (point) 'ghostel-link-id "wrapped"))
+          (insert " CCC DDD")
+          ;; From past the URL, backward lands on U1 (not U2).
+          (should (equal 5 (ghostel--find-previous-link (point-max))))
+          ;; Forward still lands on U1 naturally (URL start).
+          (should (equal 5 (ghostel--find-next-link (point-min)))))
+      (kill-buffer buf))))
+
+(ert-deftest ghostel-test-hyperlink-navigation-shared-id-no-link-id-property ()
+  "Runs without `ghostel-link-id' (auto-detected URL, fileref) are never deduped.
+The dedup must only kick in when both ends carry a non-nil link id."
+  (with-temp-buffer
+    (insert "AAA URL1 BBB URL2 CCC")
+    ;; Plain-text URL detection sets only help-echo, no link-id.
+    (put-text-property 5 9 'help-echo "https://one")
+    (put-text-property 14 18 'help-echo "https://two")
+    ;; From inside URL1, URL2 is still found (no skip).
+    (should (equal 14 (ghostel--find-next-link 5)))
+    (should (equal 5 (ghostel--find-previous-link 14)))))
+
 (ert-deftest ghostel-test-hyperlink-navigation-wrap ()
   "Test that `ghostel--goto-hyperlink' wraps and errors cleanly."
   :tags '(native)

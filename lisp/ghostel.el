@@ -4007,23 +4007,47 @@ a line suffix opens at the start of the file or directory."
   (interactive)
   (ghostel--open-link (ghostel--uri-at-pos (point))))
 
+(defun ghostel--find-link-1 (direction from)
+  "Return the start of the next/previous hyperlink from FROM, or nil.
+DIRECTION is `next' or `previous'.
+
+Treats runs sharing a `ghostel-link-id' as one logical link: if FROM is
+inside such a run, other runs with that id are skipped; for `previous',
+the result is walked back to the earliest same-id run so a wrapped URL
+lands at its start, not its last chunk."
+  (let ((search-fn (if (eq direction 'next)
+                       #'text-property-search-forward
+                     #'text-property-search-backward))
+        (skip-id (get-text-property from 'ghostel-link-id)))
+    (save-excursion
+      (goto-char from)
+      (catch 'found
+        (while-let ((match (funcall search-fn 'help-echo nil
+                                    (lambda (_ v) v) t)))
+          (let* ((pos (prop-match-beginning match))
+                 (id (get-text-property pos 'ghostel-link-id)))
+            (unless (and skip-id (equal skip-id id))
+              (when (and (eq direction 'previous) id)
+                (catch 'walked
+                  (while-let ((earlier (text-property-search-backward
+                                        'help-echo nil
+                                        (lambda (_ v) v) t)))
+                    (let ((earlier-pos (prop-match-beginning earlier)))
+                      (if (equal id (get-text-property
+                                     earlier-pos 'ghostel-link-id))
+                          (setq pos earlier-pos)
+                        (throw 'walked nil))))))
+              (throw 'found pos))))))))
+
 (defun ghostel--find-next-link (from)
   "Return start position of the first hyperlink after FROM, or nil.
-A hyperlink is any region with a non-nil `help-echo' property —
-covers OSC 8 links, auto-detected URLs, and `fileref:' references."
-  (save-excursion
-    (goto-char from)
-    (when-let* ((match (text-property-search-forward
-                        'help-echo nil (lambda (_ v) v) t)))
-      (prop-match-beginning match))))
+A hyperlink is any region with a non-nil `help-echo' property.
+Covers OSC 8 links, auto-detected URLs, and `fileref:' references."
+  (ghostel--find-link-1 'next from))
 
 (defun ghostel--find-previous-link (from)
   "Return start position of the first hyperlink before FROM, or nil."
-  (save-excursion
-    (goto-char from)
-    (when-let* ((match (text-property-search-backward
-                        'help-echo nil (lambda (_ v) v) t)))
-      (prop-match-beginning match))))
+  (ghostel--find-link-1 'previous from))
 
 (defun ghostel--goto-hyperlink (direction)
   "Jump to the next/previous hyperlink.  DIRECTION is `next' or `previous'.

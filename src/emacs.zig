@@ -526,6 +526,7 @@ const interned_symbols = [_][:0]const u8{
     "ghostel-comint--update-dir",
     "ghostel-glyph-scale-floor",
     "ghostel-input",
+    "ghostel-link-id",
     "ghostel-link-map",
     "ghostel-prompt",
     "ghostel-wrap",

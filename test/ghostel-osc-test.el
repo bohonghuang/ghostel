@@ -73,6 +73,90 @@ the URI in the buffer."
               (should (or (null uri) (string= "" uri))))))
       (kill-buffer buf))))
 
+(ert-deftest ghostel-test-osc8-shared-id-emits-link-id-property ()
+  "OSC 8 chunks sharing `id=foo' carry equal `ghostel-link-id' text properties.
+Distinct ids and implicit (no-id) links each get unique values, so elisp
+`equal' can dedupe only the matching chunks."
+  :tags '(native)
+  (let ((buf (generate-new-buffer " *ghostel-test-osc8-link-id*")))
+    (unwind-protect
+        (with-current-buffer buf
+          (ghostel-mode)
+          (let* ((term (ghostel--new 5 80 1000))
+                 (ghostel--term term)
+                 (ghostel--term-rows 5)
+                 (inhibit-read-only t))
+            (ghostel--write-input
+             term
+             (concat
+              "\e]8;id=A;https://shared.example\e\\foo\e]8;;\e\\ "
+              "\e]8;id=B;https://other.example\e\\bar\e]8;;\e\\ "
+              "\e]8;id=A;https://shared.example\e\\baz\e]8;;\e\\ "
+              "\e]8;;https://implicit.example\e\\qux\e]8;;\e\\ "
+              "\e]8;;https://implicit.example\e\\zot\e]8;;\e\\"))
+            (ghostel--redraw term t)
+            (goto-char (point-min))
+            (let ((foo (progn (search-forward "foo") (- (point) 3)))
+                  (bar (progn (search-forward "bar") (- (point) 3)))
+                  (baz (progn (search-forward "baz") (- (point) 3)))
+                  (qux (progn (search-forward "qux") (- (point) 3)))
+                  (zot (progn (search-forward "zot") (- (point) 3))))
+              ;; Same explicit id → equal property value.
+              (should (equal "A" (get-text-property foo 'ghostel-link-id)))
+              (should (equal "A" (get-text-property baz 'ghostel-link-id)))
+              (should (equal "B" (get-text-property bar 'ghostel-link-id)))
+              ;; Implicit links are integers; two separate OSC 8 sequences
+              ;; without `id=' get distinct counters (ghostty bumps the
+              ;; implicit counter on every startHyperlink), so they never
+              ;; equal each other and dedupe never kicks in for them.
+              (should (integerp (get-text-property qux 'ghostel-link-id)))
+              (should (integerp (get-text-property zot 'ghostel-link-id)))
+              (should-not (equal (get-text-property qux 'ghostel-link-id)
+                                 (get-text-property zot 'ghostel-link-id))))))
+      (kill-buffer buf))))
+
+(ert-deftest ghostel-test-osc8-shared-id-navigation-dedupes ()
+  "`ghostel-next/previous-hyperlink' stop once per OSC 8 id (issue #125).
+Feeds the scenario from the issue: a single logical URL emitted as two
+OSC 8 chunks with `id=wrap', separated by intervening text on a new
+row.  Navigation should land on the link only once, not on each chunk."
+  :tags '(native)
+  (let ((buf (generate-new-buffer " *ghostel-test-osc8-nav-dedupe*")))
+    (unwind-protect
+        (with-current-buffer buf
+          (ghostel-mode)
+          (let* ((term (ghostel--new 5 80 1000))
+                 (ghostel--term term)
+                 (ghostel--term-rows 5)
+                 (inhibit-read-only t))
+            (ghostel--write-input
+             term
+             (concat
+              "\e]8;id=wrap;https://wrapped.example\e\\http://exa\e]8;;\e\\\r\n"
+              "│ middle text │\r\n"
+              "\e]8;id=wrap;https://wrapped.example\e\\mple.com\e]8;;\e\\\r\n"
+              "\e]8;id=other;https://other.example\e\\next\e]8;;\e\\"))
+            (ghostel--redraw term t)
+            (goto-char (point-min))
+            (let ((chunk1 (progn (search-forward "http://exa") (- (point) 10)))
+                  (chunk2 (progn (search-forward "mple.com") (- (point) 8)))
+                  (other (progn (search-forward "next") (- (point) 4))))
+              ;; Same id on both chunks.
+              (should (equal "wrap" (get-text-property chunk1 'ghostel-link-id)))
+              (should (equal "wrap" (get-text-property chunk2 'ghostel-link-id)))
+              (should (equal "other" (get-text-property other 'ghostel-link-id)))
+              ;; From inside chunk1, forward skips chunk2 (same id), lands on `next'.
+              (should (equal other (ghostel--find-next-link chunk1)))
+              ;; From inside chunk2, forward also lands on `next' (no skip,
+              ;; since `other' has a different id).
+              (should (equal other (ghostel--find-next-link chunk2)))
+              ;; From inside chunk2, backward skips chunk1 (same id), no link left.
+              (should (null (ghostel--find-previous-link chunk2)))
+              ;; From inside `next', backward walks back over chunk2 (same id)
+              ;; and lands on chunk1, the URL's first chunk.
+              (should (equal chunk1 (ghostel--find-previous-link other))))))
+      (kill-buffer buf))))
+
 (ert-deftest ghostel-test-osc8-uri-at-pos-two-links ()
   "`ghostel--native-uri-at-pos' returns the correct URI for each of two links."
   :tags '(native)
