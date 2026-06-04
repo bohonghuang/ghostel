@@ -9,6 +9,8 @@
 
 (require 'ghostel-test-helpers)
 
+(defvar-local ghostel-test-compile--finish-continuation nil)
+
 (ert-deftest ghostel-test-compile-finalize-scans-errors ()
   "`ghostel-compile--finalize' parses errors in the scan region."
   (ghostel-test--with-compile-buffer buf
@@ -393,6 +395,25 @@ scrolled below the window."
       (should (equal "finished\n" (cdar g-calls)))
       (should (equal 1 (length c-calls)))                     ; compile hook
       (should (equal "finished\n" (cdar c-calls))))))
+
+(ert-deftest ghostel-test-compile-buffer-local-finish-hook-state-is-available ()
+  "Buffer-local compile finish hook state is available at finalization."
+  (ghostel-test--with-compile-buffer buf
+    (let ((finish-called nil)
+          (continuation-called nil))
+      (setq-local ghostel-test-compile--finish-continuation
+                  (lambda () (setq continuation-called t)))
+      (add-hook 'compilation-finish-functions
+                (lambda (_buffer _message)
+                  (setq finish-called t)
+                  (funcall ghostel-test-compile--finish-continuation))
+                nil t)
+      (setq ghostel-compile--command "true"
+            ghostel-compile--start-time (current-time)
+            ghostel-compile--scan-marker (copy-marker (point-max)))
+      (ghostel-compile--finalize buf 0 (current-time))
+      (should finish-called)
+      (should continuation-called))))
 
 (ert-deftest ghostel-test-compile-auto-jump-to-first-error ()
   "With `compilation-auto-jump-to-first-error' set, jump after parsing."
