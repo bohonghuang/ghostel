@@ -150,7 +150,7 @@ pub fn init(alloc: Allocator, initial_cols: u16, initial_rows: u16, params: Proc
 
     self.pty.setupReplica() catch |err| {
         stderr.print("Failed to set up PTY replica: {s}", .{@errorName(err)}) catch {};
-        posix.exit(1);
+        std.c._exit(1);
     };
 
     if (params.cwd) |cwd| posix.chdir(cwd) catch |err| {
@@ -160,7 +160,7 @@ pub fn init(alloc: Allocator, initial_cols: u16, initial_rows: u16, params: Proc
     const err = posix.execvpeZ(params.file, args, env);
     // The above never returns on success, if we're here it means we failed
     stderr.print("Failed to start subprocess: {s}", .{@errorName(err)}) catch {};
-    posix.exit(1);
+    std.c._exit(1);
 }
 
 pub fn deinitAndWait(self: *Self) void {
