@@ -169,6 +169,8 @@ fn loopOnce(self: *Self) !bool {
     var buf: [1024]u8 = undefined;
     _ = try posix.poll(&pollfds, -1);
 
+    self.term_mutex.lock();
+    defer self.term_mutex.unlock();
     while (true) {
         if (@atomicLoad(bool, &self.quit, .monotonic)) return false;
 
@@ -180,11 +182,7 @@ fn loopOnce(self: *Self) !bool {
 
         if (len == 0) break;
 
-        {
-            self.term_mutex.lock();
-            defer self.term_mutex.unlock();
-            self.stream.nextSlice(buf[0..len]);
-        }
+        self.stream.nextSlice(buf[0..len]);
     }
 
     if (pollfds[0].revents & posix.POLL.HUP != 0) {
