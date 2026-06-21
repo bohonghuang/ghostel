@@ -164,8 +164,8 @@
             (ghostel--init-buffer buf 7 33))
           (with-current-buffer buf
             (should (eq ghostel--term 'new-term))
-            (should (= ghostel--term-rows 7))
-            (should (= ghostel--term-cols 33))
+            (should-not ghostel--term-rows)
+            (should-not ghostel--term-cols)
             (should (equal ghostel--managed-buffer-name "managed"))
             (should (equal ghostel--buffer-identity "identity"))))
       (kill-buffer buf))))
@@ -182,8 +182,8 @@
           (with-current-buffer buf
             (should (derived-mode-p 'ghostel-mode))
             (should (eq ghostel--term 'fake-term))
-            (should (= ghostel--term-rows 7))
-            (should (= ghostel--term-cols 33))
+            (should-not ghostel--term-rows)
+            (should-not ghostel--term-cols)
             (should-not ghostel--buffer-identity)))
       (when (buffer-live-p buf)
         (kill-buffer buf)))))
