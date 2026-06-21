@@ -187,7 +187,7 @@ literal newline in the input for multi-line prompts."
   "<remap> <self-insert-command>" #'ghostel-line-mode-self-insert)
 
 (defun ghostel-line-mode-send-or-open-link ()
-  "Open the hyperlink at point, or send the input line if there is none."
+  "Follow the link at point, or send the current line-mode input."
   (interactive)
   (let ((url (ghostel--uri-at-pos (point))))
     (if url
@@ -196,14 +196,9 @@ literal newline in the input for multi-line prompts."
 
 (defun ghostel-line-mode-self-insert (&optional n)
   "Self-insert N times, snapping point back to the input region first.
-When point sits in the read-only scrollback portion of a line-mode
-buffer, jump to the end of the in-progress input
-\(`ghostel--line-input-end') and self-insert there.  When point is
-already inside `[ghostel--line-input-start, ghostel--line-input-end]'
-this is just `self-insert-command'.
-
-The prefix argument N is forwarded to `self-insert-command' so
-\\[universal-argument] still works as expected."
+When point is in read-only scrollback, insert at the end of the
+in-progress input instead.  The prefix argument N is forwarded to
+`self-insert-command' so \\[universal-argument] works as expected."
   (interactive "p")
   (let ((start (and (markerp ghostel--line-input-start)
                     (marker-position ghostel--line-input-start)))
@@ -471,35 +466,19 @@ in line mode (the interactive entry validates these)."
 
 (defun ghostel-line-mode (&optional force)
   "Switch to line mode — edit input locally, send to shell on RET.
-The user types into an editable region between the last prompt
-and `point-max'.  Full Emacs editing (yank, `kill-word',
-transpose, etc.) works.  Pressing \\[ghostel-line-mode-send]
-sends the entire line to the shell in one write; bash echoes and
-executes it normally.
+The user types into an editable region between the last prompt and
+`point-max'.  Full Emacs editing (yank, `kill-word', transpose,
+etc.) works.  Pressing \\[ghostel-line-mode-send] sends the input
+to the shell in one write.
 
-The terminal stays live: output streaming in around the prompt
-keeps rendering, and the snapshot/restore path in
-`ghostel--redraw-now' preserves the user's in-progress input
-across each redraw cycle.  After RET, line mode stays active so
-the user just keeps editing at the next prompt.
+Completion runs against the editable input and follows OSC 7 / TRAMP
+directory tracking.  The terminal stays live while output streams
+around the prompt.  After RET, line mode stays active for the next
+prompt.
 
-\\<ghostel-line-mode-map>\\[ghostel-line-mode-complete-at-point]
-runs `completion-at-point' against the input region — filenames,
-env vars, executables on \\=`PATH\\=', and whatever \\=`pcomplete\\='
-extensions are loaded.  Install the `bash-completion' package and
-set `ghostel-line-mode-use-bash-completion' to layer real bash
-programmable completion (git subcommands, ssh hosts, …) on top.
-
-Uses the terminal cursor as the input-area boundary, so REPLs
-without OSC 133 (python3, irb, sqlite3, …) work too.  When OSC
-133 markers are present on the cursor's row, the prompt prefix is
-recognised and the input boundary lands right after it.
-
-On the alt screen, line mode enters at an inner shell prompt whose
-OSC 133 markers reach Ghostel (tmux/screen passthrough); over a raw
-TUI (vim, less) it instead arms and resumes when the TUI exits.  A
-prefix arg (FORCE) forces immediate entry regardless — use it at an
-inner prompt whose OSC 133 does not pass through the multiplexer."
+On the alt screen, line mode enters at a shell prompt whose OSC 133
+markers reach Ghostel; over a raw TUI (vim, less) it arms and resumes
+when the TUI exits.  A prefix arg FORCE forces immediate entry."
   (interactive "P")
   (unless ghostel--term
     (user-error "No terminal in this buffer"))
@@ -696,20 +675,11 @@ screen."
 
 (defun ghostel-line-mode-send ()
   "Send the current in-progress input line to the shell.
-Reads the text between the line-input marker and `point-max',
-deletes it locally, sends the input to the PTY as a single write,
-then submits via an encoded `return' keypress so the running app
-sees Enter the same way semi-char mode would have produced it.
+Deletes the local input, writes it to the PTY, then submits Return.
 
-The encoded Return matters for TUI apps that distinguish a
-literal newline (Shift-Enter) from a submit (e.g. claude-code,
-pi).  They expect CR or a kitty-keyboard-protocol-encoded Enter,
-not a raw \\n; bash readline accepts CR as `accept-line' too, so
-the same code path works for shells.
-
-Stays in line mode: the next redraw cycle picks up the shell's
-echo and command output, and the snapshot/restore path moves the
-input marker to wherever the new prompt lands."
+The encoded Return matters for TUI apps that distinguish a literal
+newline (Shift-Enter) from submit (e.g. claude-code, pi).  Shells
+accept the same CR as `accept-line'."
   (interactive)
   (unless (eq ghostel--input-mode 'line)
     (user-error "Not in line mode"))
@@ -738,9 +708,7 @@ input marker to wherever the new prompt lands."
 
 (defun ghostel-line-mode-interrupt ()
   "Discard local input and send SIGINT (\\`C-c') to the shell.
-Stays in line mode; the next redraw cycle picks up the shell's
-new prompt and the snapshot/restore path repositions the input
-marker."
+Stays in line mode for the next prompt."
   (interactive)
   (ghostel--line-mode-delete-input)
   (setq ghostel--line-mode-history-index nil)
@@ -835,23 +803,10 @@ point is idempotent)."
     (ignore-errors (bash-completion-require-process))))
 
 (defun ghostel-line-mode-complete-at-point ()
-  "Complete the input at point against the line-mode capf stack.
-Narrows to `[ghostel--line-input-start, ghostel--line-input-end)'
-before delegating to `completion-at-point' so that comint/shell
-completion functions parse only the user's typed input — the
-prompt and surrounding scrollback are invisible to them.
-
-When point sits in the read-only scrollback, snaps to the input
-end first (mirrors `ghostel-line-mode-self-insert').
-
-Refreshes `comint-file-name-prefix' from `default-directory' on
-each call so completions follow OSC 7 / TRAMP directory tracking
-when it flips between local and remote.
-
-The capf list comes from `ghostel--line-mode-effective-capfs',
-which combines `ghostel-line-mode-completion-at-point-functions'
-with optional `bash-completion' integration controlled by
-`ghostel-line-mode-use-bash-completion'."
+  "Complete the line-mode input at point.
+Completion sees only the editable input, not the prompt or scrollback.
+When point is in read-only scrollback, completion starts at the end of
+the input instead."
   (interactive)
   (let ((start (and (markerp ghostel--line-input-start)
                     (marker-position ghostel--line-input-start)))

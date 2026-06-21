@@ -3221,21 +3221,8 @@ when nothing can locate a position (no cursor and no detection)."
 
 (defun ghostel-beginning-of-input-or-line ()
   "Move point to the start of input on a prompt row, else `beginning-of-line'.
-On a line that carries the `ghostel-prompt' text property over its
-leading characters, point moves to the position right after the
-last contiguous prompt character — i.e. where the user's input
-begins on that prompt row.  In line mode the active input marker
-\(`ghostel--line-input-start') wins over the property scan so an
-empty fresh prompt still goes to the marker position.
-
-Without the property (no OSC 133 shell integration), consult
-`ghostel-prompt-regexp' so the command still finds the prompt
-prefix on lines from raw shells, Python REPL, and similar.
-
-On any other line — scrollback, output, a prompt-continuation row
-that has no content past the prefix — falls through to
-`move-beginning-of-line', so navigating up into history and
-pressing \\`C-a' gives the standard column-0 behaviour."
+On prompt rows, point moves to the first input character after the
+prompt prefix.  On other rows, point moves to the line beginning."
   (interactive "^")
   (let* ((bol (line-beginning-position))
          (eol (line-end-position))
@@ -3456,7 +3443,6 @@ Wraps to `point-max' when no link is found before point."
   (dotimes (_ (or n 1))
     (ghostel--goto-hyperlink 'previous)))
 
-;; Make the ghostel-*-hyperlink play nice with eldoc.
 (eldoc-add-command #'ghostel-next-hyperlink #'ghostel-previous-hyperlink)
 
 (defun ghostel--detect-urls-skip-p (pos active-bounds)
@@ -3798,9 +3784,8 @@ is preserved.  Mirrors the landing position used by
 
 (defun ghostel-imenu-setup ()
   "Wire OSC 133 prompts as imenu entries in the current buffer.
-Sets `imenu-create-index-function' and `imenu-default-goto-function',
-and registers the cwd-stamping hook on
-`ghostel-command-start-functions'."
+Prompt labels include the command and, when known, the command's
+working directory."
   (setq-local imenu-create-index-function #'ghostel--imenu-create-index)
   (setq-local imenu-default-goto-function #'ghostel--imenu-goto)
   (add-hook 'ghostel-command-start-functions
@@ -4130,9 +4115,8 @@ back to `message' when alert isn't installed.  TITLE is the
 notification summary; when empty (iTerm2-style OSC 9) the buffer
 name is used.  BODY is the notification text.
 
-Runs deferred off the VT-parser callpath by
-`ghostel--handle-notification' with the originating ghostel buffer
-current, so `buffer-name' here gives the terminal buffer's name."
+Runs with the originating ghostel buffer current, so an empty
+TITLE falls back to that buffer's name."
   (let ((summary (if (or (null title) (string-empty-p title))
                      (buffer-name)
                    title)))
@@ -4142,12 +4126,9 @@ current, so `buffer-name' here gives the terminal buffer's name."
 
 (defun ghostel-default-progress (state progress)
   "Default handler for OSC 9;4 ConEmu progress reports.
-Updates `ghostel--mode-line-progress' (and refreshes
-`mode-line-process') to show the current STATE and PROGRESS (an
-integer 0-100 or nil).  STATE is one of the symbols `remove',
-`set', `error', `indeterminate', `pause'.  The input-mode tag in
-`ghostel--mode-line-tag' is composed alongside, so progress
-updates do not clobber labels like \":Char\" or \":Line\"."
+Shows STATE and PROGRESS in `mode-line-process'.  STATE is one of
+`remove', `set', `error', `indeterminate', or `pause'; PROGRESS is
+an integer 0-100 or nil."
   (let ((new-val
          (pcase state
            ('remove        nil)
@@ -4171,9 +4152,7 @@ updates do not clobber labels like \":Char\" or \":Line\"."
 (defun ghostel--spinner-stop ()
   "Stop this buffer's progress spinner, if any.
 Safe to call when no spinner is running.  Errors from spinner.el
-\(e.g. on a half-torn-down buffer) are swallowed — this is
-teardown.  Refreshes `mode-line-process' so the spinner construct
-no longer renders alongside the input-mode tag."
+\(e.g. on a half-torn-down buffer) are swallowed during teardown."
   (when ghostel--spinner-active
     (ignore-errors (spinner-stop))
     (setq ghostel--spinner-active nil)
@@ -4188,9 +4167,7 @@ STATE is one of those symbols; PROGRESS is an integer 0-100 or nil.
 
 Requires spinner.el to be available; signals a `user-error' on
 the first call if it is not.  The spinner style is controlled by
-`ghostel-spinner-type'.  The input-mode tag (`:Char', `:Line',
-…) is preserved across spinner transitions via
-`ghostel--mode-line-refresh'."
+`ghostel-spinner-type'."
   (unless (require 'spinner nil t)
     (user-error
      "Cannot run `ghostel-spinner-progress' without spinner.el — install it \
@@ -5926,14 +5903,13 @@ Returns the buffer."
 (defun ghostel-exec (buffer program &optional args)
   "Run PROGRAM with ARGS as a ghostel terminal in BUFFER.
 
-BUFFER is switched into `ghostel-mode' (if not already) and a new
-terminal is created sized to the window displaying BUFFER, or
-80x24 if BUFFER is not currently displayed.  No shell integration is applied.
-PROGRAM and ARGS are passed as distinct argv entries, so shell metacharacters
-are not interpreted; pass extra tokens via ARGS, a list of strings.  Returns
-the lifecycle process object for the selected PTY path.
+BUFFER is switched into `ghostel-mode' and sized to its displayed
+window, or 80x24 if BUFFER is not displayed.  PROGRAM and ARGS are
+passed as distinct argv entries, so shell metacharacters are not
+interpreted.  Shell integration is not applied.
 
-Signals `user-error' if BUFFER already has a live ghostel process."
+Returns the lifecycle process object.  Signals `user-error' if BUFFER
+already has a live ghostel process."
   (ghostel--load-module t)
   (when (with-current-buffer buffer
           (process-live-p ghostel--process))

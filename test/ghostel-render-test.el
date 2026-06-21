@@ -792,11 +792,7 @@ This is the vterm-style growing-buffer model that lets `isearch' and
       (kill-buffer buf))))
 
 (ert-deftest ghostel-test-scrollback-bootstrap-not-blank ()
-  "First-time scrollback materialization must contain actual content.
-Regression test: when the initial (mostly empty) viewport was rendered
-and then a burst of output overflowed the screen, the promotion
-optimisation incorrectly kept the stale empty rows as scrollback
-instead of fetching the real content from libghostty."
+  "First-time scrollback materialization must contain actual content."
   :tags '(native)
   (let ((buf (generate-new-buffer " *ghostel-test-sb-bootstrap*")))
     (unwind-protect
@@ -1336,10 +1332,7 @@ the written content; all remaining lines must be empty."
       (kill-buffer buf))))
 
 (ert-deftest ghostel-test-resize-no-blank-flash ()
-  "Buffer keeps old content after resize; redraw replaces it atomically.
-Regression test: fnSetSize used to call `erase-buffer' synchronously,
-leaving the buffer visibly empty until the next timer-driven redraw.
-Now the erasure is deferred into redraw() under `inhibit-redisplay'."
+  "Buffer keeps old content after resize; redraw replaces it atomically."
   :tags '(native)
   (let ((buf (generate-new-buffer " *ghostel-test-resize-no-blank*")))
     (unwind-protect

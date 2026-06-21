@@ -430,9 +430,7 @@ instead of running Emacs commands like `forward-sexp'."
 
 (ert-deftest ghostel-test-control-punct-key-bindings ()
   "Control + non-letter keys route to `ghostel--send-event' in semi-char.
-C-] and C-/ previously fell through to Emacs (C-] = `abort-recursive-edit',
-C-/ = `undo') instead of reaching the shell/readline.  Only the keys that
-the ghostty encoder maps to a terminal byte are forwarded."
+Only keys that the ghostty encoder maps to a terminal byte are forwarded."
   (dolist (key-str '("C-]" "C-/"))
     (should (eq (lookup-key ghostel-semi-char-mode-map (kbd key-str))
                 #'ghostel--send-event)))

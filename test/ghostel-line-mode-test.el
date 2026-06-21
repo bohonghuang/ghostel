@@ -264,9 +264,8 @@ result must be 2 to prove the prop branch is consulted first."
 Also verifies the documented nil-return when no cursor is available."
   (ghostel-test--with-input-fixture "$ " "hello"
     (let ((cursor-pos ghostel--cursor-char-pos))
-      ;; Move point away from the cursor and verify the function still
-      ;; returns the cursor position — proves it reads
-      ;; `ghostel--cursor-char-pos', not `(point)'.
+      ;; Move point away from the cursor; the function still returns the
+      ;; terminal cursor position.
       (goto-char (point-min))
       (should-not (= (point) cursor-pos))
       (should (= cursor-pos (ghostel-cursor-point))))
@@ -315,11 +314,8 @@ Also verifies the documented nil-return when no cursor is available."
 
 (ert-deftest ghostel-test-copy-to-line-restarts-redraw-timer ()
   "Copy → line transition re-arms the redraw timer.
-Copy mode froze the timer via `ghostel--freeze-terminal'; line
-mode is live, so the redraw cycle must be running again on exit
-or the prompt sits stuck until the next PTY byte arrives.
-Regression: `ghostel--line-mode-enter' previously cleared
-`buffer-read-only' but never called `ghostel--invalidate'."
+Copy mode freezes the timer; line mode is live, so redraws must resume
+without waiting for another PTY byte."
   (let ((buf (generate-new-buffer " *ghostel-test-copy-to-line*"))
         (invalidate-calls 0))
     (unwind-protect
@@ -1663,10 +1659,7 @@ running through a redraw cycle."
 
 (ert-deftest ghostel-test-line-mode-restores-cursor-when-terminal-hid-it ()
   "Line mode shows the editor's cursor regardless of CSI ?25l from the TUI.
-Bug: a TUI that hides the cursor (e.g. claude-code) leaves
-`cursor-type' nil, and line mode previously inherited that — so
-moving point produced no visible cursor.  Entering line mode must
-force the editor default; teardown must restore the saved value."
+Entering line mode forces the editor default; teardown restores the saved value."
   (let ((buf (generate-new-buffer " *ghostel-test-line-cursor*")))
     (unwind-protect
         (with-current-buffer buf

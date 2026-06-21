@@ -28,9 +28,7 @@
       (should-not (string-match-p "\\*\\*" (cdr result))))))
 
 (ert-deftest ghostel-test-project-universal-arg ()
-  "`ghostel-project' forwards the prefix arg AND binds `ghostel-buffer-name'.
-The captured value of `ghostel-buffer-name' at `ghostel' call time
-proves the project-prefixed binding actually took effect."
+  "`ghostel-project' forwards the prefix arg and binds `ghostel-buffer-name'."
   (require 'project)
   ;; Numeric prefix arg (C-5 M-x ghostel-project)
   (let ((ghostel-buffer-name "*ghostel*")
