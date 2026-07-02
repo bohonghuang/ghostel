@@ -841,7 +841,7 @@ before sending the input."
   :type 'boolean)
 
 (defcustom ghostel-prompt-regexp
-  "^[^#$%>λ❯→➜\n]\\{0,60\\}[#$%>λ❯→➜]+ *"
+  "^[^#$%>λ❯→➜\n]\\{0,60\\}[#$%>λ❯→➜]+[ \u00a0]*"
   "Regexp matching a prompt prefix at the beginning of a line.
 Consulted as a fallback by `ghostel-input-start-point' and
 `ghostel-beginning-of-input-or-line' when the row has no
@@ -852,6 +852,8 @@ The default recognizes:
 - Python and similar REPLs: `>>> '
 - Themed prompts: `λ ', `❯ ' (Starship/Pure/Powerlevel10k),
   `➜ ' (oh-my-zsh robbyrussell), `→ '
+- Prompts padded with a no-break space (U+00A0) instead of a
+  plain space, e.g. Claude Code's `> '
 
 The negated character class `[^#$%>λ❯→➜\\n]\\{0,60\\}' forces the match to
 stop at the *first* prompt character on the line, so command lines echoed into

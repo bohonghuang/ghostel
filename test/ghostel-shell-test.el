@@ -1589,6 +1589,15 @@ reaching the `%' in a `100%' progress line (here past column 60)."
     ;; Prompt prefix `$ ' ends at position 3.
     (should (= (ghostel--regex-prompt-end (point)) 3))))
 
+(ert-deftest ghostel-test-regex-prompt-end-nbsp-padding ()
+  "A prompt padded with a no-break space is detected past the padding.
+Claude Code emits `>' followed by U+00A0 instead of a plain space."
+  (with-temp-buffer
+    (insert ">\u00a0help me")
+    (goto-char (point-min))
+    ;; Prompt prefix `>' + NBSP ends at position 3.
+    (should (= (ghostel--regex-prompt-end (point)) 3))))
+
 (ert-deftest ghostel-test-beginning-of-input-lookahead-skips-output-line ()
   "On an output line above a real prompt, `C-a' goes to BOL.
 The line has no `ghostel-prompt' property and starts with a stray `>',
