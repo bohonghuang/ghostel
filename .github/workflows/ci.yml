@@ -138,6 +138,7 @@ jobs:
             -f evil-ghostel-test-run
 
   build-native:
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -145,6 +146,7 @@ jobs:
           - os: ubuntu-latest
             platform: x86_64-linux
             suffix: .so
+            target: x86_64-linux-gnu.2.27
           - os: macos-26
             platform: aarch64-macos
             suffix: .dylib
@@ -155,12 +157,11 @@ jobs:
           - os: ubuntu-latest
             platform: aarch64-linux
             suffix: .so
-            target: aarch64-linux-gnu
+            target: aarch64-linux-gnu.2.27
           - os: ubuntu-latest
             platform: x86_64-freebsd
             suffix: .so
             target: x86_64-freebsd
-    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -283,3 +284,5 @@ jobs:
       - name: Run saved Hypothesis regression cases
         run: |
           make EMACSFLAGS="-L /tmp/compat" test-hypothesis-cases
+
+          
